@@ -81,9 +81,11 @@ export class VirtualClock {
     /**
      * イベントが存在する限り実行する
      */
-    run(): void {
+    async run(): Promise<void> {
+        const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
         while (this.tasks.length > 0) {
             this.runNext()
+            await sleep(100);
         }
     }
 }

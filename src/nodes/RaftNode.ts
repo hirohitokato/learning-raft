@@ -26,7 +26,7 @@ export type RequestVoteResponse = {
 
 export type SendMessage = (message: Message) => void
 
-class RaftNode {
+export class RaftNode {
     /// ノードの識別子
     readonly id: number
     readonly peers: number[]
@@ -105,6 +105,7 @@ class RaftNode {
         }
 
         let voteGranted = false
+
         if (this.votedFor === null || this.votedFor === message.from) {
             // まだ投票していない、または同じ候補者に投票している場合は投票を許可
             voteGranted = true
@@ -137,6 +138,7 @@ class RaftNode {
             this.votedFor = null
             this.votesReceived.clear()
             this.resetElectionTimer()
+
             return
         }
 
