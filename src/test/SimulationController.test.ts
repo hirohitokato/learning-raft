@@ -49,12 +49,29 @@ describe("SimulationController", () => {
         expect(controller.getNodeSnapshot(1)?.remainingElectionTime).toBe(initialReceived)
     })
 
-    test("commits a log entry through the controller", () => {
+    test("routes a follower proposal to the active leader", () => {
+        const controller = new SimulationController({ nodeCount: 2 })
+        const leader = controller.nodes[0]!
+        leader.currentTerm = 1
+        leader["becomeLeader"]()
+
+        expect(controller.proposeLogEntry(1, "set x=1")).toBe(true)
+
+        expect(controller.getNodeSnapshot(0)?.logs).toEqual([{ term: 1, command: "set x=1" }])
+        expect(controller.getNodeSnapshot(1)?.logs).toEqual([])
+    })
+
+    test("rejects proposals without a leader or from a suspended node", () => {
         const controller = new SimulationController({ nodeCount: 2 })
 
-        controller.commitLogEntry(0, "set x=1")
+        expect(controller.proposeLogEntry(0, "set x=1")).toBe(false)
 
-        expect(controller.getNodeSnapshot(0)?.logs).toEqual([{ term: 0, command: "set x=1" }])
-        expect(controller.getNodeSnapshot(0)?.commitIndex).toBe(0)
+        const leader = controller.nodes[0]!
+        leader.currentTerm = 1
+        leader["becomeLeader"]()
+        controller.setNodeActive(1, false)
+
+        expect(controller.proposeLogEntry(1, "set x=1")).toBe(false)
+        expect(controller.getNodeSnapshot(0)?.logs).toEqual([])
     })
 })

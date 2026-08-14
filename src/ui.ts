@@ -151,8 +151,13 @@ controls.toggleActive.addEventListener("click", () => { if (selectedNodeId !== n
 controls.resetNode.addEventListener("click", () => { if (selectedNodeId !== null) { controller.resetNode(selectedNodeId); updateUi() } })
 controls.commitLog.addEventListener("click", () => {
     if (selectedNodeId === null || !controls.logCommand.value.trim()) return
-    controller.commitLogEntry(selectedNodeId, controls.logCommand.value.trim())
-    controls.logCommand.value = ""
+    if (controller.proposeLogEntry(selectedNodeId, controls.logCommand.value.trim())) {
+        controls.logCommand.setCustomValidity("")
+        controls.logCommand.value = ""
+    } else {
+        controls.logCommand.setCustomValidity("No active leader is available. Retry after an election.")
+        controls.logCommand.reportValidity()
+    }
     updateUi()
 })
 

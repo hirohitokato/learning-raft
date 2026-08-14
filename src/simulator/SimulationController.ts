@@ -191,15 +191,14 @@ export class SimulationController {
         }
     }
 
-    commitLogEntry(id: number, command: unknown): void {
-        const node = this.nodes.find((candidate) => candidate.id === id)
-        if (!node) {
-            return
+    proposeLogEntry(sourceNodeId: number, command: unknown): boolean {
+        const source = this.nodes.find((node) => node.id === sourceNodeId)
+        if (!source?.active) {
+            return false
         }
 
-        node.logs.push({ term: node.currentTerm, command })
-        node.commitIndex = Math.max(node.commitIndex, node.logs.length - 1)
-        node.lastApplied = Math.max(node.lastApplied, node.logs.length - 1)
+        const leader = this.nodes.find((node) => node.active && node.state === "leader")
+        return leader?.propose(command) ?? false
     }
 
     reset(count = this.config.nodeCount): void {

@@ -279,6 +279,22 @@ export class RaftNode {
         }
     }
 
+    /**
+     * LeaderとしてクライアントのcommandをLogへ提案する。
+     * commitはAppendEntriesの過半数応答を受けてから進む。
+     */
+    propose(command: unknown): boolean {
+        if (!this.active || this.state !== "leader") {
+            return false
+        }
+
+        this.logs.push({ term: this.currentTerm, command })
+        this.updateCommitIndex() // 1-node cluster commits its own entry.
+        this.sendHeartbeats()
+
+        return true
+    }
+
     // ============================================================
     // Message handling
     // ============================================================
