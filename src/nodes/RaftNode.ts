@@ -162,7 +162,12 @@ export class RaftNode {
     // 状態
     // ============================================================
 
+    active = true
     private started = false
+    private pausedElectionRemaining = 0
+    private pausedElectionRatio = 0
+    private electionDeadline: number | null = null
+    private lastElectionStartedAt = 0
 
     constructor(
         id: number,
@@ -188,6 +193,10 @@ export class RaftNode {
      * 起動時はFollowerとしてElection Timeoutを待つ。
      */
     start(): void {
+        if (!this.active) {
+            return
+        }
+
         if (this.started) {
             return
         }
@@ -199,6 +208,55 @@ export class RaftNode {
         this.resetElectionTimer()
     }
 
+    setActive(active: boolean): void {
+        if (this.active === active) {
+            return
+        }
+
+        this.active = active
+
+        if (!this.active) {
+            this.stopHeartbeat()
+            this.stopElectionTimer()
+            this.pausedElectionRemaining = this.getTimerSnapshot().remaining
+            this.pausedElectionRatio = this.getTimerSnapshot().ratio
+            this.electionDeadline = null
+            return
+        }
+
+        this.pausedElectionRemaining = 0
+        this.pausedElectionRatio = 0
+        this.resetElectionTimer()
+
+        if (this.state === "leader") {
+            this.scheduleNextHeartbeat()
+        }
+    }
+
+    getTimerSnapshot(): { remaining: number; ratio: number } {
+        if (!this.active) {
+            return {
+                remaining: this.pausedElectionRemaining,
+                ratio: this.pausedElectionRatio,
+            }
+        }
+
+        if (this.electionDeadline === null) {
+            return {
+                remaining: 0,
+                ratio: 0,
+            }
+        }
+
+        const remaining = Math.max(0, this.electionDeadline - this.clock.now)
+        const ratio = this.electionTimeoutMs <= 0 ? 0 : remaining / this.electionTimeoutMs
+
+        return {
+            remaining,
+            ratio: Math.min(1, Math.max(0, ratio)),
+        }
+    }
+
     // ============================================================
     // Message handling
     // ============================================================
@@ -207,6 +265,10 @@ export class RaftNode {
      * メッセージを受信して適切なハンドラへディスパッチする。
      */
     receive(message: Message): void {
+        if (!this.active) {
+            return
+        }
+
         switch (message.type) {
             case "RequestVote":
                 this.handleRequestVote(message)
@@ -928,10 +990,17 @@ export class RaftNode {
      * 既にTimerが存在する場合はキャンセルしてから新しいTimerを登録する。
      */
     private resetElectionTimer(): void {
+        if (!this.active) {
+            return
+        }
+
         this.stopElectionTimer()
+        this.lastElectionStartedAt = this.clock.now
+        this.electionDeadline = this.clock.now + this.electionTimeoutMs
 
         this.electionTimeoutId = this.clock.schedule(this.electionTimeoutMs, () => {
             this.electionTimeoutId = null
+            this.electionDeadline = null
 
             this.log(`election timeout`)
 

@@ -4,6 +4,8 @@
     "type": "module",
     "private": true,
     "scripts": {
+        "dev": "bun --hot run main.ts",
+        "start": "bun run main.ts",
         "lint": "eslint .",
         "format": "prettier --write .",
         "format:check": "prettier --check .",

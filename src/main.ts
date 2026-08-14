@@ -1,5 +1,16 @@
-import { Simulator } from "./simulator/Simulator"
+import index from "./index.html"
 
-const simulator = new Simulator(5) // 例: 5ノード
-simulator.start()
-simulator.run()
+const port = Number(process.env.PORT ?? 3000)
+
+Bun.serve({
+    port,
+    routes: {
+        "/": index,
+    },
+    development: {
+        hmr: true,
+        console: true,
+    },
+})
+
+console.log(`Raft visualization is running at http://localhost:${port}`)

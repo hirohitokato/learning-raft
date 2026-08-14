@@ -1,7 +1,7 @@
 import { VirtualClock } from "../clock/VirtualClock"
 import type { Message } from "../nodes/Message"
 
-type Position = {
+export type Position = {
     x: number
     y: number
 }
@@ -29,6 +29,7 @@ export class NetworkSimulator {
      * そのノードの receive() を呼び出す責務を持つ。
      */
     private readonly receivers = new Map<number, (message: Message) => void>()
+    private readonly nodeStates = new Map<number, boolean>()
 
     /**
      * Node ID → 位置
@@ -39,6 +40,19 @@ export class NetworkSimulator {
      * 物理距離と伝播遅延を計算できるようにしている。
      */
     private readonly positions = new Map<number, Position>()
+
+    private nextMessageId = 0
+
+    private readonly activeMessages: Array<{
+        id: number
+        type: string
+        from: number
+        to: number
+        startedAt: number
+        endedAt: number
+        fromPosition: Position
+        toPosition: Position
+    }> = []
 
     constructor(clock: VirtualClock, config: NetworkConfig) {
         this.clock = clock
@@ -53,7 +67,57 @@ export class NetworkSimulator {
      */
     registerNode(id: number, position: Position, receiver: (message: Message) => void): void {
         this.positions.set(id, position)
-        this.receivers.set(id, receiver)
+        this.nodeStates.set(id, true)
+        this.receivers.set(id, (message: Message) => {
+            if (this.nodeStates.get(id) === false) {
+                return
+            }
+
+            receiver(message)
+        })
+    }
+
+    unregisterNode(id: number): void {
+        this.positions.delete(id)
+        this.receivers.delete(id)
+        this.nodeStates.delete(id)
+    }
+
+    setNodeActive(id: number, active: boolean): void {
+        this.nodeStates.set(id, active)
+    }
+
+    setSpeed(speed: number): void {
+        this.config.speed = Math.max(1, Number(speed) || 1)
+    }
+
+    getNodePosition(id: number): Position | undefined {
+        return this.positions.get(id)
+    }
+
+    getActiveMessages(): Array<{
+        id: number
+        type: string
+        from: number
+        to: number
+        progress: number
+        fromPosition: Position
+        toPosition: Position
+    }> {
+        return this.activeMessages.map((message) => {
+            const duration = Math.max(1, message.endedAt - message.startedAt)
+            const progress = Math.min(1, Math.max(0, (this.clock.now - message.startedAt) / duration))
+
+            return {
+                id: message.id,
+                type: message.type,
+                from: message.from,
+                to: message.to,
+                progress,
+                fromPosition: message.fromPosition,
+                toPosition: message.toPosition,
+            }
+        })
     }
 
     /**
@@ -90,7 +154,25 @@ export class NetworkSimulator {
                 `delivery=${deliveryTime.toFixed(2)}`,
         )
 
+        const activeMessage = {
+            id: this.nextMessageId++,
+            type: message.type,
+            from: message.from,
+            to: message.to,
+            startedAt: this.clock.now,
+            endedAt: deliveryTime,
+            fromPosition: from,
+            toPosition: to,
+        }
+
+        this.activeMessages.push(activeMessage)
+
         this.clock.schedule(latencyMs, () => {
+            this.activeMessages.splice(
+                this.activeMessages.findIndex((entry) => entry.id === activeMessage.id),
+                1,
+            )
+
             const receiver = this.receivers.get(message.to)
 
             if (!receiver) {
@@ -114,5 +196,3 @@ export class NetworkSimulator {
         return Math.sqrt(dx * dx + dy * dy)
     }
 }
-
-export type { Position, NetworkConfig }

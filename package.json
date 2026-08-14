@@ -1,0 +1,9 @@
+{
+  "name": "raft-visualization",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "PORT=${PORT:-3010} bun --hot src/main.ts",
+    "start": "PORT=${PORT:-3010} bun src/main.ts"
+  }
+}
