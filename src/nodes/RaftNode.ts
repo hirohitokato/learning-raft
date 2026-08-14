@@ -155,12 +155,10 @@ export class RaftNode {
      */
     private electionTimeoutId: number | null = null
 
-    /**
-     * Election Timeout。
-     *
-     * この値はNodeごとに異なる値を渡すことを推奨。実際のRaftではランダム化する。
-     */
-    private readonly electionTimeoutMs: number
+    /** Election Timeoutの最小値。各リセット時にこの値から2倍未満で再抽選する。 */
+    private readonly electionTimeoutMinMs: number
+    private readonly random: () => number
+    private currentElectionTimeoutMs = 0
 
     // ============================================================
     // 状態
@@ -178,13 +176,15 @@ export class RaftNode {
         peers: readonly number[],
         clock: VirtualClock,
         sendMessage: SendMessage,
-        electionTimeoutMs: number,
+        electionTimeoutMinMs: number,
+        random: () => number = Math.random,
     ) {
         this.id = id
         this.peers = peers
         this.clock = clock
         this.sendMessage = sendMessage
-        this.electionTimeoutMs = electionTimeoutMs
+        this.electionTimeoutMinMs = electionTimeoutMinMs
+        this.random = random
     }
 
     // ============================================================
@@ -241,9 +241,6 @@ export class RaftNode {
         this.stopHeartbeat()
         this.stopElectionTimer()
         this._state = "follower"
-        this.currentTerm = 0
-        this.votedFor = null
-        this.logs = []
         this.commitIndex = -1
         this.lastApplied = -1
         this.votesReceived.clear()
@@ -271,7 +268,7 @@ export class RaftNode {
         }
 
         const remaining = Math.max(0, this.electionDeadline - this.clock.now)
-        const ratio = this.electionTimeoutMs <= 0 ? 0 : remaining / this.electionTimeoutMs
+        const ratio = this.currentElectionTimeoutMs <= 0 ? 0 : remaining / this.currentElectionTimeoutMs
 
         return {
             remaining,
@@ -361,7 +358,7 @@ export class RaftNode {
             this.currentTerm = message.term
             this.votedFor = null
 
-            this.becomeFollower()
+            this.becomeFollower(false)
         }
 
         // --------------------------------------------------------
@@ -422,7 +419,7 @@ export class RaftNode {
             this.currentTerm = message.term
             this.votedFor = null
 
-            this.becomeFollower()
+            this.becomeFollower(false)
 
             return
         }
@@ -484,12 +481,6 @@ export class RaftNode {
          * したがってCandidateだったとしてもFollowerに戻る。
          */
         this.becomeFollower()
-
-        /**
-         * LeaderからHeartbeat / AppendEntriesを受信したので、
-         * Election Timeoutをリセットする。
-         */
-        this.resetElectionTimer()
 
         // --------------------------------------------------------
         // Leaderが示している「直前のLog」が自分のLogと一致しているか確認する。
@@ -585,7 +576,7 @@ export class RaftNode {
             this.currentTerm = message.term
             this.votedFor = null
 
-            this.becomeFollower()
+            this.becomeFollower(false)
 
             return
         }
@@ -1000,12 +991,7 @@ export class RaftNode {
     /**
      * Followerへ戻る。
      */
-    private becomeFollower(newTerm?: number): void {
-        if (newTerm !== undefined && newTerm > this.currentTerm) {
-            this.currentTerm = newTerm
-            this.votedFor = null
-        }
-
+    private becomeFollower(resetElectionTimer = true): void {
         this._state = "follower"
 
         // Candidate用のVote情報は不要。
@@ -1014,8 +1000,11 @@ export class RaftNode {
         // Leader用Timerが残っていれば停止。
         this.stopHeartbeat()
 
-        // Followerとして新しいElection Timeoutを開始。
-        this.resetElectionTimer()
+        // RequestVoteを拒否しただけではtimerを延長しない。
+        // Leaderはtimerを持たないため、降格時だけ新しく開始する。
+        if (resetElectionTimer || this.electionTimeoutId === null) {
+            this.resetElectionTimer()
+        }
     }
 
     // ============================================================
@@ -1034,9 +1023,11 @@ export class RaftNode {
 
         this.stopElectionTimer()
         this.lastElectionStartedAt = this.clock.now
-        this.electionDeadline = this.clock.now + this.electionTimeoutMs
+        const jitter = Math.max(0, Math.min(0.999999, this.random()))
+        this.currentElectionTimeoutMs = this.electionTimeoutMinMs + Math.floor(jitter * this.electionTimeoutMinMs)
+        this.electionDeadline = this.clock.now + this.currentElectionTimeoutMs
 
-        this.electionTimeoutId = this.clock.schedule(this.electionTimeoutMs, () => {
+        this.electionTimeoutId = this.clock.schedule(this.currentElectionTimeoutMs, () => {
             this.electionTimeoutId = null
             this.electionDeadline = null
 

@@ -27,8 +27,8 @@ export class Simulator {
                 (message: Message) => {
                     this.network.send(message)
                 },
-                Math.floor(Math.random() * 150) + 150,
-            ) // 150ms〜300msの範囲でランダムに選挙タイムアウトを設定
+                150,
+            ) // 各Election Timeoutを150ms〜300ms未満で再抽選
 
             this.nodes.set(i, node)
             this.network.registerNode(i, { x: i * 100, y: (i % 2) * 80 }, (message: Message) => {

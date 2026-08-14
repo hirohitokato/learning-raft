@@ -245,7 +245,7 @@ export class SimulationController {
                 (message: Message) => {
                     this.network.send(message)
                 },
-                Math.floor(Math.random() * 150) + 150,
+                150,
             )
 
             this.nodes.push(node)
