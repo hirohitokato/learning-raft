@@ -42,7 +42,7 @@ export class SimulationController {
             nodeCount: config.nodeCount ?? 5,
             communicationSpeed: config.communicationSpeed ?? 1,
             timeStepMs: config.timeStepMs ?? 5,
-            simulationSpeed: config.simulationSpeed ?? 1,
+            simulationSpeed: config.simulationSpeed ?? 20,
             randomSeed: config.randomSeed ?? Date.now(),
         }
 
@@ -92,7 +92,7 @@ export class SimulationController {
 
     setSimulationSpeed(speed: number): void {
         const value = Number(speed)
-        this.config.simulationSpeed = Math.max(0.1, Number.isFinite(value) ? value : 1)
+        this.config.simulationSpeed = Math.min(100, Math.max(0, Math.floor(Number.isFinite(value) ? value : 20)))
         if (this._running) {
             this.pause()
             this.start()
@@ -114,7 +114,7 @@ export class SimulationController {
         this.animationFrame = setInterval(() => {
             this.advance(this.config.timeStepMs)
             this.lastTickAt = Date.now()
-        }, 100 / this.config.simulationSpeed)
+        }, this.tickDelayMs)
     }
 
     pause(): void {
@@ -227,9 +227,13 @@ export class SimulationController {
 
     getActiveMessages() {
         const elapsed = this._running
-            ? Math.min(1, (Date.now() - this.lastTickAt) / (100 / this.config.simulationSpeed))
+            ? this.tickDelayMs === 0 ? 1 : Math.min(1, (Date.now() - this.lastTickAt) / this.tickDelayMs)
             : 0
         return this.network.getActiveMessages(this.clock.now + this.config.timeStepMs * elapsed)
+    }
+
+    private get tickDelayMs(): number {
+        return this.config.timeStepMs * this.config.simulationSpeed
     }
 
     private buildNodes(count: number): void {

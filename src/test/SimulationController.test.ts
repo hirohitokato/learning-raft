@@ -15,7 +15,9 @@ describe("SimulationController", () => {
         expect(controller.simulationSpeed).toBe(2)
 
         controller.setSimulationSpeed(0)
-        expect(controller.simulationSpeed).toBe(0.1)
+        expect(controller.simulationSpeed).toBe(0)
+        controller.setSimulationSpeed(101)
+        expect(controller.simulationSpeed).toBe(100)
 
         controller.start()
         controller.advance(10)
