@@ -1,4 +1,3 @@
-
 /// 仮想時刻を進めるためのタスクを表す型
 export type ScheduledTask = {
     /// タスクの識別子
@@ -36,7 +35,7 @@ export class VirtualClock {
         const task: ScheduledTask = {
             id: this.nextId++,
             at: this.nowMs + delayMs,
-            callback: callback
+            callback: callback,
         }
         this.tasks.push(task)
         // タスクを実行予定時刻でソートする
@@ -48,7 +47,7 @@ export class VirtualClock {
 
     /// 指定したタスクをキャンセルする
     cancel(taskId: number): void {
-        this.tasks = this.tasks.filter(task => task.id !== taskId)
+        this.tasks = this.tasks.filter((task) => task.id !== taskId)
     }
 
     /**
@@ -71,7 +70,11 @@ export class VirtualClock {
      * @param targetMs 進んだ後の時刻
      */
     runUntil(targetMs: number): void {
-        while (this.tasks.length > 0 && this.tasks[0].at <= targetMs) {
+        while (this.tasks.length > 0) {
+            const nextTask = this.tasks[0]
+            if (!nextTask || nextTask.at > targetMs) {
+                break
+            }
             this.runNext()
         }
         // 最後に時刻をtargetMsまで進める
@@ -82,10 +85,10 @@ export class VirtualClock {
      * イベントが存在する限り実行する
      */
     async run(): Promise<void> {
-        const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+        const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
         while (this.tasks.length > 0) {
             this.runNext()
-            await sleep(100);
+            await sleep(100)
         }
     }
 }
