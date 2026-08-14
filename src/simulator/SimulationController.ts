@@ -7,6 +7,7 @@ export type SimulationConfig = {
     nodeCount?: number
     communicationSpeed?: number
     timeStepMs?: number
+    simulationSpeed?: number
     randomSeed?: number
 }
 
@@ -27,19 +28,21 @@ export type SimulationNode = {
 }
 
 export class SimulationController {
-    readonly clock = new VirtualClock()
+    clock = new VirtualClock()
     readonly nodes: RaftNode[] = []
-    readonly network: NetworkSimulator
+    network: NetworkSimulator
 
     private config: Required<SimulationConfig>
     private _running = false
     private animationFrame?: ReturnType<typeof setInterval>
+    private lastTickAt = Date.now()
 
     constructor(config: SimulationConfig = {}) {
         this.config = {
             nodeCount: config.nodeCount ?? 5,
             communicationSpeed: config.communicationSpeed ?? 1,
             timeStepMs: config.timeStepMs ?? 5,
+            simulationSpeed: config.simulationSpeed ?? 1,
             randomSeed: config.randomSeed ?? Date.now(),
         }
 
@@ -63,6 +66,10 @@ export class SimulationController {
         return this.config.communicationSpeed
     }
 
+    get simulationSpeed(): number {
+        return this.config.simulationSpeed
+    }
+
     get simulationTime(): number {
         return this.clock.now
     }
@@ -70,7 +77,7 @@ export class SimulationController {
     setNodeCount(nextCount: number): void {
         const count = Math.max(1, Math.floor(nextCount))
         this.config.nodeCount = count
-        this.rebuildNodes(count)
+        this.reset(count)
     }
 
     setCommunicationSpeed(speed: number): void {
@@ -83,12 +90,22 @@ export class SimulationController {
         this.config.timeStepMs = Math.max(1, Number(stepMs) || 1)
     }
 
+    setSimulationSpeed(speed: number): void {
+        const value = Number(speed)
+        this.config.simulationSpeed = Math.max(0.1, Number.isFinite(value) ? value : 1)
+        if (this._running) {
+            this.pause()
+            this.start()
+        }
+    }
+
     start(): void {
         if (this._running) {
             return
         }
 
         this._running = true
+        this.lastTickAt = Date.now()
 
         for (const node of this.nodes) {
             node.start()
@@ -96,7 +113,8 @@ export class SimulationController {
 
         this.animationFrame = setInterval(() => {
             this.advance(this.config.timeStepMs)
-        }, this.config.timeStepMs)
+            this.lastTickAt = Date.now()
+        }, 100 / this.config.simulationSpeed)
     }
 
     pause(): void {
@@ -156,13 +174,7 @@ export class SimulationController {
             return
         }
 
-        node.logs = []
-        node.commitIndex = -1
-        node.lastApplied = -1
-        node.currentTerm = 0
-        node.votedFor = null
-        node.state = "follower"
-        node["votesReceived"]?.clear()
+        node.reset()
     }
 
     setNodeActive(id: number, active: boolean): void {
@@ -179,7 +191,7 @@ export class SimulationController {
         }
     }
 
-    addLogEntry(id: number, command: unknown): void {
+    commitLogEntry(id: number, command: unknown): void {
         const node = this.nodes.find((candidate) => candidate.id === id)
         if (!node) {
             return
@@ -188,6 +200,19 @@ export class SimulationController {
         node.logs.push({ term: node.currentTerm, command })
         node.commitIndex = Math.max(node.commitIndex, node.logs.length - 1)
         node.lastApplied = Math.max(node.lastApplied, node.logs.length - 1)
+    }
+
+    reset(count = this.config.nodeCount): void {
+        const wasRunning = this._running
+        this.pause()
+        this.clock = new VirtualClock()
+        this.network = new NetworkSimulator(this.clock, { speed: this.config.communicationSpeed })
+        this.nodes.length = 0
+        this.buildNodes(count)
+
+        if (wasRunning) {
+            this.start()
+        }
     }
 
     moveNode(id: number, x: number, y: number): void {
@@ -202,7 +227,10 @@ export class SimulationController {
     }
 
     getActiveMessages() {
-        return this.network.getActiveMessages()
+        const elapsed = this._running
+            ? Math.min(1, (Date.now() - this.lastTickAt) / (100 / this.config.simulationSpeed))
+            : 0
+        return this.network.getActiveMessages(this.clock.now + this.config.timeStepMs * elapsed)
     }
 
     private buildNodes(count: number): void {
@@ -229,14 +257,6 @@ export class SimulationController {
                 node.receive(message)
             })
         }
-    }
-
-    private rebuildNodes(count: number): void {
-        for (const node of this.nodes) {
-            this.network.unregisterNode(node.id)
-        }
-        this.nodes.length = 0
-        this.buildNodes(count)
     }
 
     private getNodeTimerRemaining(node: RaftNode): number {

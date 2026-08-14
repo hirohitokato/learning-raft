@@ -52,7 +52,11 @@ export class RaftNode {
     // ============================================================
 
     /// ノードの現在の状態
-    state: RaftState = "follower"
+    private _state: RaftState = "follower"
+
+    get state(): RaftState {
+        return this._state
+    }
 
     /**
      * ノードが知っている最新のTerm。
@@ -230,6 +234,24 @@ export class RaftNode {
 
         if (this.state === "leader") {
             this.scheduleNextHeartbeat()
+        }
+    }
+
+    reset(): void {
+        this.stopHeartbeat()
+        this.stopElectionTimer()
+        this._state = "follower"
+        this.currentTerm = 0
+        this.votedFor = null
+        this.logs = []
+        this.commitIndex = -1
+        this.lastApplied = -1
+        this.votesReceived.clear()
+        this.nextIndex.clear()
+        this.matchIndex.clear()
+
+        if (this.active && this.started) {
+            this.resetElectionTimer()
         }
     }
 
@@ -647,7 +669,7 @@ export class RaftNode {
         // --------------------------------------------------------
         // Candidateになる
         // --------------------------------------------------------
-        this.state = "candidate"
+        this._state = "candidate"
 
         // --------------------------------------------------------
         // 新しいTermを開始
@@ -918,7 +940,7 @@ export class RaftNode {
             return
         }
 
-        this.state = "leader"
+        this._state = "leader"
 
         this.log(`became leader for term ${this.currentTerm}`)
 
@@ -968,7 +990,7 @@ export class RaftNode {
             this.votedFor = null
         }
 
-        this.state = "follower"
+        this._state = "follower"
 
         // Candidate用のVote情報は不要。
         this.votesReceived.clear()

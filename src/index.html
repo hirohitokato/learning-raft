@@ -3,273 +3,56 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Raft Visualization</title>
+    <title>Raft Control Room</title>
     <style>
-      :root {
-        --bg: #0f172a;
-        --panel: #111827;
-        --panel-alt: #1f2937;
-        --grid: rgba(148, 163, 184, 0.15);
-        --text: #e5e7eb;
-        --muted: #94a3b8;
-        --leader: #22c55e;
-        --follower: #60a5fa;
-        --candidate: #fbbf24;
-        --suspend: #f87171;
-        --active: #34d399;
-        --shadow: rgba(15, 23, 42, 0.35);
-      }
-
-      * { box-sizing: border-box; }
-
-      html, body {
-        margin: 0;
-        height: 100%;
-        background: var(--bg);
-        color: var(--text);
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      }
-
-      body {
-        display: flex;
-        min-height: 100vh;
-      }
-
-      .app {
-        display: grid;
-        grid-template-columns: 320px minmax(0, 1fr) 280px;
-        width: 100%;
-        min-height: 100vh;
-      }
-
-      .panel {
-        background: rgba(17, 24, 39, 0.95);
-        border-right: 1px solid rgba(148, 163, 184, 0.15);
-        padding: 16px;
-      }
-
-      .panel.right {
-        border-left: 1px solid rgba(148, 163, 184, 0.15);
-        border-right: none;
-      }
-
-      h2, h3 {
-        margin: 0 0 12px;
-        font-size: 14px;
-        letter-spacing: 0.04em;
-        text-transform: uppercase;
-        color: var(--muted);
-      }
-
-      .section {
-        margin-bottom: 20px;
-      }
-
-      .field {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-        margin-bottom: 12px;
-      }
-
-      .field label {
-        font-size: 12px;
-        color: var(--muted);
-      }
-
-      .field input, .field select, .field button {
-        width: 100%;
-        border: 1px solid rgba(148, 163, 184, 0.2);
-        background: rgba(15, 23, 42, 0.8);
-        color: var(--text);
-        padding: 8px 10px;
-        border-radius: 8px;
-        font-size: 13px;
-      }
-
-      .field button {
-        cursor: pointer;
-        transition: transform 0.15s ease, border-color 0.15s ease;
-      }
-
-      .field button:hover {
-        border-color: rgba(96, 165, 250, 0.7);
-        transform: translateY(-1px);
-      }
-
-      .primary {
-        background: linear-gradient(135deg, #2563eb, #1d4ed8);
-        border-color: transparent;
-      }
-
-      .secondary {
-        background: rgba(30, 41, 59, 0.8);
-      }
-
-      .main {
-        display: flex;
-        flex-direction: column;
-        min-width: 0;
-      }
-
-      .topbar {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 14px 20px;
-        border-bottom: 1px solid rgba(148, 163, 184, 0.15);
-        background: rgba(15, 23, 42, 0.8);
-      }
-
-      .topbar h1 {
-        font-size: 24px;
-        margin: 0;
-      }
-
-      .status {
-        font-size: 13px;
-        color: var(--muted);
-      }
-
-      .board-wrap {
-        flex: 1;
-        padding: 16px;
-        display: flex;
-        align-items: stretch;
-        min-height: 0;
-      }
-
-      .board {
-        position: relative;
-        width: 100%;
-        background: radial-gradient(circle at top, rgba(37, 99, 235, 0.15), rgba(15, 23, 42, 0.6)), #0b1120;
-        border: 1px solid rgba(148, 163, 184, 0.18);
-        border-radius: 16px;
-        overflow: hidden;
-        box-shadow: 0 12px 32px var(--shadow);
-      }
-
-      canvas {
-        display: block;
-        width: 100%;
-        height: 100%;
-      }
-
-      .node-list {
-        list-style: none;
-        margin: 0;
-        padding: 0;
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-      }
-
-      .node-row {
-        background: rgba(15, 23, 42, 0.7);
-        border: 1px solid rgba(148, 163, 184, 0.12);
-        border-radius: 10px;
-        padding: 10px;
-      }
-
-      .node-row.selected {
-        border-color: rgba(96, 165, 250, 0.8);
-        box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.5);
-      }
-
-      .node-row-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        font-size: 12px;
-        margin-bottom: 6px;
-      }
-
-      .dot {
-        display: inline-block;
-        width: 10px;
-        height: 10px;
-        border-radius: 50%;
-        margin-right: 6px;
-        vertical-align: middle;
-      }
-
-      .legend {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        font-size: 11px;
-        color: var(--muted);
-      }
-
-      .legend span {
-        display: inline-flex;
-        align-items: center;
-      }
-
-      .badge {
-        display: inline-block;
-        border-radius: 999px;
-        padding: 2px 8px;
-        font-size: 11px;
-        color: white;
-        font-weight: 700;
-      }
-
-      .leader { background: var(--leader); }
-      .follower { background: var(--follower); }
-      .candidate { background: var(--candidate); color: #111827; }
-      .suspend { background: var(--suspend); }
-      .active { background: var(--active); color: #062d1d; }
+      :root { --ink:#e7f1ec; --mute:#8ba69d; --line:#29453f; --panel:#0b1b1d; --deep:#061114; --lime:#c6f46a; --blue:#7ab8ff; --gold:#ffc857; --coral:#ff7f66; }
+      * { box-sizing:border-box; } html,body { min-height:100%; margin:0; } body { background:var(--deep); color:var(--ink); font:13px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+      button,input,select { font:inherit; } button { color:inherit; cursor:pointer; } button:focus-visible,input:focus-visible,select:focus-visible { outline:2px solid var(--lime); outline-offset:2px; }
+      .app { min-height:100vh; display:grid; grid-template-columns:290px minmax(400px,1fr) 290px; background:linear-gradient(120deg,#061114,#0b1b1d 55%,#061114); }
+      .rail { padding:18px; background:rgba(5,18,20,.78); border-right:1px solid var(--line); overflow:auto; } .rail.right { border-right:0; border-left:1px solid var(--line); }
+      .brand { margin:2px 0 26px; font-size:18px; letter-spacing:.16em; color:var(--lime); } .eyebrow { color:var(--mute); font-size:10px; font-weight:800; letter-spacing:.18em; text-transform:uppercase; }
+      .section { margin:0 0 25px; } .section-title { margin:0 0 11px; font-size:11px; color:var(--mute); letter-spacing:.15em; text-transform:uppercase; }
+      .field { display:grid; gap:5px; margin:0 0 11px; } label { color:var(--mute); font-size:11px; } input,select { width:100%; min-height:36px; padding:7px 9px; color:var(--ink); border:1px solid var(--line); border-radius:4px; background:#0a191a; }
+      .button { width:100%; min-height:38px; border:1px solid var(--line); border-radius:4px; background:#10282a; transition:background .15s,border-color .15s,transform .15s; } .button:hover { border-color:var(--lime); background:#163336; transform:translateY(-1px); } .button.primary { color:#10200e; font-weight:800; background:var(--lime); border-color:var(--lime); } .button.danger:hover { border-color:var(--coral); }
+      .main { min-width:0; display:flex; flex-direction:column; } .topbar { height:72px; display:flex; align-items:center; justify-content:space-between; gap:20px; padding:0 24px; border-bottom:1px solid var(--line); } h1 { margin:0; font-size:17px; letter-spacing:.08em; } .clock { min-width:110px; padding:8px 10px; color:var(--lime); text-align:right; border:1px solid var(--line); background:#081719; }
+      .board-wrap { flex:1; min-height:480px; padding:22px; } .board { position:relative; width:100%; height:100%; min-height:480px; overflow:hidden; border:1px solid var(--line); border-radius:8px; box-shadow:0 20px 50px rgba(0,0,0,.25); } .board::after { content:"DRAG NODES TO REPOSITION"; position:absolute; right:14px; bottom:12px; color:rgba(231,241,236,.38); font-size:10px; letter-spacing:.1em; pointer-events:none; } canvas { display:block; width:100%; height:100%; touch-action:none; }
+      .node-list { display:grid; gap:7px; margin:0; padding:0; list-style:none; } .node-row { width:100%; display:grid; gap:7px; padding:10px; text-align:left; border:1px solid #234039; border-radius:4px; background:#09191b; } .node-row:hover,.node-row.selected { border-color:var(--blue); background:#0d2326; } .node-row.selected { box-shadow:inset 3px 0 var(--lime); } .node-row-top { display:flex; align-items:center; justify-content:space-between; gap:5px; } .node-name { font-weight:800; font-size:12px; letter-spacing:.04em; } .node-name i { display:inline-block; width:8px; height:8px; margin-right:6px; border-radius:50%; background:var(--node-color); } .node-row-meta { color:var(--mute); font-size:10px; }
+      .badge { display:inline-block; padding:2px 6px; border-radius:2px; color:#081719; font-size:10px; font-weight:800; text-transform:uppercase; } .badge.leader { background:var(--lime); } .badge.follower { background:var(--blue); } .badge.candidate { background:var(--gold); }
+      .empty { padding:17px 0; color:var(--mute); border-top:1px solid var(--line); border-bottom:1px solid var(--line); } .node-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:17px; } .node-head strong { letter-spacing:.06em; } .metrics { display:grid; grid-template-columns:repeat(3,1fr); gap:7px; margin-bottom:18px; } .metric { padding:9px 6px; text-align:center; border:1px solid var(--line); background:#081719; } .metric span { display:block; color:var(--mute); font-size:9px; letter-spacing:.08em; } .metric strong { font-size:18px; color:var(--lime); } .timer-readout { display:block; padding:8px 9px; color:var(--lime); border:1px solid var(--line); background:#081719; }
+      @media (max-width:960px) { .app { grid-template-columns:250px minmax(0,1fr); } .rail.right { grid-column:1 / -1; border-left:0; border-top:1px solid var(--line); } } @media (max-width:680px) { .app { grid-template-columns:1fr; } .rail { border-right:0; border-bottom:1px solid var(--line); } .board-wrap { min-height:380px; padding:12px; } .board { min-height:380px; } }
     </style>
   </head>
   <body>
     <div class="app">
-      <aside class="panel left">
-        <div class="section">
-          <h2>Simulation</h2>
-          <div class="field">
-            <label for="nodeCount">Node Count</label>
-            <input id="nodeCount" type="number" min="1" max="20" value="5" />
-          </div>
-          <div class="field">
-            <label for="communicationSpeed">Communication Speed (units/ms)</label>
-            <input id="communicationSpeed" type="number" min="1" step="1" value="2" />
-          </div>
-          <div class="field">
-            <label for="timeStepMs">Step Duration (ms)</label>
-            <input id="timeStepMs" type="number" min="1" step="1" value="5" />
-          </div>
-          <div class="field">
-            <button id="toggleSimulation" class="primary">Start / Pause</button>
-          </div>
-        </div>
-
-        <div class="section">
-          <h2>Nodes</h2>
-          <ul id="stateTable" class="node-list"></ul>
-        </div>
+      <aside class="rail">
+        <div class="brand">RAFT // LAB</div>
+        <section class="section" aria-labelledby="simulation-title">
+          <h2 id="simulation-title" class="section-title">Simulation controls</h2>
+          <div class="field"><label for="nodeCount">Node count</label><input id="nodeCount" type="number" min="1" max="20" value="5" /></div>
+          <div class="field"><label for="communicationSpeed">Network units / ms</label><input id="communicationSpeed" type="number" min="0.1" step="0.1" value="1" /></div>
+          <div class="field"><label for="timeStepMs">Virtual ms / tick</label><input id="timeStepMs" type="number" min="1" step="1" value="10" /></div>
+          <div class="field"><label for="simulationSpeed">Execution speed</label><input id="simulationSpeed" type="number" min="0.1" step="0.1" value="1" /></div>
+          <button id="toggleSimulation" class="button primary" type="button">Start simulation</button>
+        </section>
+        <section class="section" aria-labelledby="nodes-title"><h2 id="nodes-title" class="section-title">Nodes</h2><ul id="stateTable" class="node-list"></ul></section>
       </aside>
-
       <main class="main">
-        <header class="topbar">
-          <h1>Raft Visualization</h1>
-          <div id="clock" class="status">Time: 0ms</div>
-        </header>
-        <div class="board-wrap">
-          <div class="board">
-            <canvas id="simCanvas" width="1000" height="700"></canvas>
-          </div>
-        </div>
+        <header class="topbar"><div><div class="eyebrow">Distributed systems playground</div><h1>RAFT CONTROL ROOM</h1></div><output id="clock" class="clock">0 ms</output></header>
+        <div class="board-wrap"><div class="board"><canvas id="simCanvas" width="1000" height="700" aria-label="Raft node topology"></canvas></div></div>
       </main>
-
-      <aside class="panel right">
-        <div class="section">
-          <h3>Node Settings</h3>
-          <div id="nodeSettings"></div>
-        </div>
+      <aside class="rail right">
+        <section class="section" aria-labelledby="inspector-title"><h2 id="inspector-title" class="section-title">Node inspector</h2>
+          <div id="nodeEmpty" class="empty">Select a node from the topology or list.</div>
+          <div id="nodeDetail" hidden>
+            <div class="node-head"><strong id="selectedNodeId">NODE</strong><span id="selectedNodeState" class="badge">follower</span></div>
+            <div class="metrics"><div class="metric"><span>TERM</span><strong id="selectedNodeTerm">0</strong></div><div class="metric"><span>VOTES</span><strong id="selectedNodeVotes">0</strong></div><div class="metric"><span>LOGS</span><strong id="selectedNodeLogs">0</strong></div></div>
+            <div class="field"><label>Election timer</label><output id="selectedNodeTimer" class="timer-readout">0 ms</output></div>
+            <div class="field"><label for="logCommand">Commit a log entry</label><input id="logCommand" type="text" placeholder="e.g. set x=1" /></div>
+            <button id="commitLog" class="button primary" type="button">Commit log entry</button><div style="height:8px"></div><button id="toggleActive" class="button" type="button">Suspend node</button><div style="height:8px"></div><button id="resetNode" class="button danger" type="button">Reset state machine</button>
+          </div>
+        </section>
       </aside>
     </div>
-
     <script type="module" src="./ui.ts"></script>
   </body>
 </html>

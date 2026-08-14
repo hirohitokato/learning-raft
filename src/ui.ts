@@ -1,401 +1,172 @@
 import { SimulationController } from "./simulator/SimulationController"
 
-const controller = new SimulationController({
-    nodeCount: 5,
-    communicationSpeed: 10,
-    timeStepMs: 10,
-})
-
-const settings = {
-    nodeCount: document.querySelector("#nodeCount") as HTMLInputElement,
-    communicationSpeed: document.querySelector("#communicationSpeed") as HTMLInputElement,
-    timeStepMs: document.querySelector("#timeStepMs") as HTMLInputElement,
-    toggle: document.querySelector("#toggleSimulation") as HTMLButtonElement,
-    clock: document.querySelector("#clock") as HTMLDivElement,
-    nodeSettings: document.querySelector("#nodeSettings") as HTMLDivElement,
-    stateTable: document.querySelector("#stateTable") as HTMLUListElement,
-    canvas: document.querySelector("#simCanvas") as HTMLCanvasElement,
+const controller = new SimulationController({ nodeCount: 5, communicationSpeed: 1, timeStepMs: 10, simulationSpeed: 1 })
+const $ = <T extends Element>(selector: string) => document.querySelector(selector) as T
+const controls = {
+    nodeCount: $<HTMLInputElement>("#nodeCount"),
+    communicationSpeed: $<HTMLInputElement>("#communicationSpeed"),
+    timeStepMs: $<HTMLInputElement>("#timeStepMs"),
+    simulationSpeed: $<HTMLInputElement>("#simulationSpeed"),
+    toggle: $<HTMLButtonElement>("#toggleSimulation"),
+    clock: $<HTMLElement>("#clock"),
+    stateTable: $<HTMLUListElement>("#stateTable"),
+    canvas: $<HTMLCanvasElement>("#simCanvas"),
+    nodeEmpty: $<HTMLElement>("#nodeEmpty"),
+    nodeDetail: $<HTMLElement>("#nodeDetail"),
+    nodeId: $<HTMLElement>("#selectedNodeId"),
+    nodeState: $<HTMLElement>("#selectedNodeState"),
+    nodeTerm: $<HTMLElement>("#selectedNodeTerm"),
+    nodeVotes: $<HTMLElement>("#selectedNodeVotes"),
+    nodeLogs: $<HTMLElement>("#selectedNodeLogs"),
+    nodeTimer: $<HTMLElement>("#selectedNodeTimer"),
+    logCommand: $<HTMLInputElement>("#logCommand"),
+    commitLog: $<HTMLButtonElement>("#commitLog"),
+    toggleActive: $<HTMLButtonElement>("#toggleActive"),
+    resetNode: $<HTMLButtonElement>("#resetNode"),
 }
 
-const stateColors: Record<string, string> = {
-    leader: "#22c55e",
-    follower: "#60a5fa",
-    candidate: "#fbbf24",
-    active: "#34d399",
-    suspend: "#f87171",
-}
-
-let selectedNodeId: number | null = null
+const colors: Record<string, string> = { leader: "#c6f46a", follower: "#7ab8ff", candidate: "#ffc857" }
 const WORLD_SIZE = 100
 const GRID_CELL = 10
-const NODE_RADIUS = 18
-const ANIMATION_FPS = 30
-const FRAME_INTERVAL_MS = 1000 / ANIMATION_FPS
+let selectedNodeId: number | null = null
+let nodeListSignature = ""
 
 function syncCanvasSize() {
-    const rect = settings.canvas.getBoundingClientRect()
-    settings.canvas.width = Math.max(1, Math.floor(rect.width))
-    settings.canvas.height = Math.max(1, Math.floor(rect.height))
+    const rect = controls.canvas.getBoundingClientRect()
+    controls.canvas.width = Math.max(1, Math.floor(rect.width * devicePixelRatio))
+    controls.canvas.height = Math.max(1, Math.floor(rect.height * devicePixelRatio))
 }
 
-function getViewBox() {
-    const width = settings.canvas.width || 800
-    const height = settings.canvas.height || 600
+function viewBox() {
+    const width = controls.canvas.width || 800
+    const height = controls.canvas.height || 600
     const size = Math.min(width, height)
-    const marginX = (width - size) / 2
-    const marginY = (height - size) / 2
-    const scale = size / WORLD_SIZE
-
-    return {
-        width,
-        height,
-        size,
-        scale,
-        marginX,
-        marginY,
-    }
+    return { width, height, scale: size / WORLD_SIZE, marginX: (width - size) / 2, marginY: (height - size) / 2 }
 }
 
 function worldToScreen(x: number, y: number) {
-    const { scale, marginX, marginY } = getViewBox()
-    return {
-        x: x * scale + marginX,
-        y: y * scale + marginY,
-    }
+    const { scale, marginX, marginY } = viewBox()
+    return { x: x * scale + marginX, y: y * scale + marginY }
 }
 
-function quadraticBezier(p0: { x: number; y: number }, p1: { x: number; y: number }, p2: { x: number; y: number }, t: number) {
-    const u = 1 - t
-    return {
-        x: u * u * p0.x + 2 * u * t * p1.x + t * t * p2.x,
-        y: u * u * p0.y + 2 * u * t * p1.y + t * t * p2.y,
-    }
+function eventToCanvasPoint(event: MouseEvent) {
+    const rect = controls.canvas.getBoundingClientRect()
+    return { x: ((event.clientX - rect.left) / rect.width) * controls.canvas.width, y: ((event.clientY - rect.top) / rect.height) * controls.canvas.height }
 }
 
-function renderNodeSettings() {
-    const nodeList = controller.nodes
-    const selectedNode = selectedNodeId === null ? null : nodeList.find((node) => node.id === selectedNodeId)
-
-    if (!selectedNode) {
-        settings.nodeSettings.innerHTML = `<div class="field"><label>Selected Node</label><div style="color:#94a3b8; font-size:12px;">No node selected.</div></div>`
-        return
-    }
-
-    const snapshot = controller.getNodeSnapshot(selectedNode.id)
-    settings.nodeSettings.innerHTML = `
-      <div class="field">
-        <label>Selected Node</label>
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-          <strong>#${selectedNode.id}</strong>
-          <span class="badge ${snapshot?.state ?? "follower"}">${snapshot?.state ?? "follower"}</span>
-        </div>
-      </div>
-      <div class="field">
-        <label>Role</label>
-        <div>${snapshot?.state ?? "follower"}</div>
-      </div>
-      <div class="field">
-        <label>Current Term</label>
-        <div>${snapshot?.currentTerm ?? 0}</div>
-      </div>
-      <div class="field">
-        <label>Vote Count</label>
-        <div>${snapshot?.voteCount ?? 0}</div>
-      </div>
-      <div class="field">
-        <button data-action="toggle-active" class="secondary">${snapshot?.isActive ? "Suspend" : "Activate"}</button>
-      </div>
-      <div class="field">
-        <button data-action="reset-node" class="secondary">Reset State Machine</button>
-      </div>
-      <div class="field">
-        <label>New State</label>
-        <select id="newStateSelect">
-          <option value="follower">Follower</option>
-          <option value="candidate">Candidate</option>
-          <option value="leader">Leader</option>
-        </select>
-      </div>
-      <div class="field">
-        <button data-action="apply-state" class="primary">Set New State</button>
-      </div>
-    `
-
-    const actionButtons = settings.nodeSettings.querySelectorAll("button[data-action]")
-    actionButtons.forEach((button) => {
-        button.addEventListener("click", () => {
-            const action = button.getAttribute("data-action")
-            if (!selectedNodeId || !action) {
-                return
-            }
-
-            if (action === "toggle-active") {
-                controller.setNodeActive(selectedNodeId, !(controller.getNodeSnapshot(selectedNodeId)?.isActive ?? true))
-            }
-
-            if (action === "reset-node") {
-                controller.resetNode(selectedNodeId)
-            }
-
-            if (action === "apply-state") {
-                const select = document.querySelector("#newStateSelect") as HTMLSelectElement | null
-                if (!select) {
-                    return
-                }
-
-                const state = select.value as "follower" | "candidate" | "leader"
-                const node = controller.nodes.find((entry) => entry.id === selectedNodeId)
-                if (node) {
-                    node.state = state
-                }
-            }
-
-            renderNodeSettings()
-        })
-    })
+function selectNode(id: number | null) {
+    selectedNodeId = id
+    updateUi()
 }
 
-function renderStateTable() {
-    const snapshots = controller.getNodesSnapshot()
+function updateNodeList() {
+    const nodes = controller.getNodesSnapshot()
+    const signature = `${selectedNodeId}:${nodes.map((node) => `${node.id}:${node.state}:${node.currentTerm}:${node.voteCount}:${node.logs.length}:${node.isActive}`).join("|")}`
+    if (signature === nodeListSignature) return
+    nodeListSignature = signature
+    controls.stateTable.innerHTML = nodes.map((node) => `
+        <li><button class="node-row ${node.id === selectedNodeId ? "selected" : ""}" data-node-id="${node.id}" aria-pressed="${node.id === selectedNodeId}">
+          <span class="node-row-top"><span class="node-name"><i style="--node-color:${colors[node.state]}"></i>NODE ${node.id}</span><span class="badge ${node.state}">${node.state}</span></span>
+          <span class="node-row-meta">TERM ${node.currentTerm} · ${node.isActive ? "ONLINE" : "SUSPENDED"} · ${node.logs.length} LOGS</span>
+        </button></li>`).join("")
+}
 
-    settings.stateTable.innerHTML = snapshots
-        .map((node) => {
-            const selectedClass = node.id === selectedNodeId ? " selected" : ""
-            return `
-            <li class="node-row${selectedClass}" data-node-id="${node.id}">
-              <div class="node-row-header">
-                <span><span class="dot" style="background:${stateColors[node.state]};"></span>#${node.id}</span>
-                <span class="badge ${node.state}">${node.state}</span>
-              </div>
-              <div style="font-size:12px;color:#94a3b8;">term ${node.currentTerm} / votes ${node.voteCount}</div>
-              <div style="font-size:12px;color:#94a3b8; margin-top:4px;">logs: ${node.logs.length}</div>
-            </li>
-          `
-        })
-        .join("")
+function updateNodeDetail() {
+    const node = selectedNodeId === null ? undefined : controller.getNodeSnapshot(selectedNodeId)
+    controls.nodeEmpty.hidden = Boolean(node)
+    controls.nodeDetail.hidden = !node
+    if (!node) return
+    controls.nodeId.textContent = `NODE ${node.id}`
+    controls.nodeState.textContent = node.state
+    controls.nodeState.className = `badge ${node.state}`
+    controls.nodeTerm.textContent = String(node.currentTerm)
+    controls.nodeVotes.textContent = String(node.voteCount)
+    controls.nodeLogs.textContent = String(node.logs.length)
+    controls.nodeTimer.textContent = `${Math.ceil(node.remainingElectionTime)} ms`
+    controls.toggleActive.textContent = node.isActive ? "Suspend node" : "Activate node"
+}
 
-    settings.stateTable.querySelectorAll(".node-row").forEach((row) => {
-        row.addEventListener("click", () => {
-            const id = Number(row.getAttribute("data-node-id"))
-            selectedNodeId = id
-            renderNodeSettings()
-            renderStateTable()
-        })
-    })
+function updateUi() {
+    controls.clock.textContent = `${controller.simulationTime.toFixed(0)} ms`
+    controls.toggle.textContent = controller.running ? "Pause simulation" : "Start simulation"
+    updateNodeList()
+    updateNodeDetail()
 }
 
 function drawGrid(ctx: CanvasRenderingContext2D) {
-    const { width, height, scale, marginX, marginY } = getViewBox()
-
+    const { width, height, scale, marginX, marginY } = viewBox()
     ctx.clearRect(0, 0, width, height)
-    ctx.fillStyle = "#0b1120"
+    ctx.fillStyle = "#071114"
     ctx.fillRect(0, 0, width, height)
-
-    ctx.strokeStyle = "rgba(148,163,184,0.14)"
+    ctx.strokeStyle = "rgba(170, 215, 203, .10)"
     ctx.lineWidth = 1
-
-    for (let x = 0; x <= WORLD_SIZE; x += GRID_CELL) {
-        const px = x * scale + marginX
-        ctx.beginPath()
-        ctx.moveTo(px, marginY)
-        ctx.lineTo(px, marginY + WORLD_SIZE * scale)
-        ctx.stroke()
-    }
-
-    for (let y = 0; y <= WORLD_SIZE; y += GRID_CELL) {
-        const py = y * scale + marginY
-        ctx.beginPath()
-        ctx.moveTo(marginX, py)
-        ctx.lineTo(marginX + WORLD_SIZE * scale, py)
-        ctx.stroke()
+    for (let unit = 0; unit <= WORLD_SIZE; unit += GRID_CELL) {
+        ctx.beginPath(); ctx.moveTo(unit * scale + marginX, marginY); ctx.lineTo(unit * scale + marginX, marginY + WORLD_SIZE * scale); ctx.stroke()
+        ctx.beginPath(); ctx.moveTo(marginX, unit * scale + marginY); ctx.lineTo(marginX + WORLD_SIZE * scale, unit * scale + marginY); ctx.stroke()
     }
 }
 
-function drawMessage(
-    ctx: CanvasRenderingContext2D,
-    message: {
-        from: number
-        to: number
-        type: string
-        progress: number
-        fromPosition: { x: number; y: number }
-        toPosition: { x: number; y: number }
-    },
-) {
+function bezier(from: { x: number; y: number }, control: { x: number; y: number }, to: { x: number; y: number }, t: number) {
+    const u = 1 - t
+    return { x: u * u * from.x + 2 * u * t * control.x + t * t * to.x, y: u * u * from.y + 2 * u * t * control.y + t * t * to.y }
+}
+
+function drawMessage(ctx: CanvasRenderingContext2D, message: ReturnType<SimulationController["getActiveMessages"]>[number]) {
     const from = worldToScreen(message.fromPosition.x, message.fromPosition.y)
     const to = worldToScreen(message.toPosition.x, message.toPosition.y)
-
-    const control = {
-        x: (from.x + to.x) / 2,
-        y: Math.min(from.y, to.y) - 40,
-    }
-
-    const color = message.type.includes("Response") ? "#fbbf24" : "#a78bfa"
-
-    for (let i = 0; i < 3; i++) {
-        const t = Math.max(0, Math.min(1, message.progress - i * 0.12))
-        const point = quadraticBezier(from, control, to, t)
-
-        ctx.beginPath()
-        ctx.arc(point.x, point.y, 4.5 - i * 0.7, 0, Math.PI * 2)
-        ctx.fillStyle = color + (i === 0 ? "" : "88")
-        ctx.fill()
+    const control = { x: (from.x + to.x) / 2, y: Math.min(from.y, to.y) - 48 * devicePixelRatio }
+    const color = message.type.includes("Response") ? "#ffc857" : "#ff7f66"
+    for (let trail = 4; trail >= 0; trail--) {
+        const point = bezier(from, control, to, Math.max(0, message.progress - trail * 0.035))
+        ctx.beginPath(); ctx.arc(point.x, point.y, (4.5 - trail * 0.5) * devicePixelRatio, 0, Math.PI * 2)
+        ctx.fillStyle = trail ? `${color}55` : color; ctx.fill()
     }
 }
 
-function drawNodes(ctx: CanvasRenderingContext2D) {
-    const nodes = controller.getNodesSnapshot()
-    const messages = controller.getActiveMessages()
-
-    messages.forEach((message) => drawMessage(ctx, message))
-
-    nodes.forEach((node) => {
-        const position = worldToScreen(node.x, node.y)
-        const radius = Math.max(12, Math.min(22, getViewBox().scale * 0.8))
-        const stateColor =
-            node.state === "leader"
-                ? stateColors.leader
-                : node.state === "candidate"
-                  ? stateColors.candidate
-                  : stateColors.follower
-
-        ctx.beginPath()
-        ctx.arc(position.x, position.y, radius, 0, Math.PI * 2)
-        ctx.fillStyle = stateColor ?? "#60a5fa"
-        ctx.fill()
-
-        ctx.beginPath()
-        ctx.arc(position.x, position.y, radius + 5, 0, Math.PI * 2)
-        ctx.strokeStyle = node.isActive ? "#34d399" : "#f87171"
-        ctx.lineWidth = 2
-        ctx.stroke()
-
-        ctx.beginPath()
-        ctx.arc(position.x, position.y, radius + 9, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * node.timerRemainingRatio)
-        ctx.strokeStyle = "rgba(255,255,255,0.9)"
-        ctx.lineWidth = 3
-        ctx.stroke()
-
-        ctx.fillStyle = "#111827"
-        ctx.font = "bold 12px sans-serif"
-        ctx.textAlign = "center"
-        ctx.textBaseline = "middle"
-        ctx.fillText(String(node.id), position.x, position.y)
-
-        if (node.state === "candidate") {
-            const barWidth = radius * 2.6
-            const barX = position.x - barWidth / 2
-            const barY = position.y + radius + 12
-            ctx.fillStyle = "#111827"
-            ctx.fillRect(barX, barY, barWidth, 8)
-            ctx.fillStyle = "#fbbf24"
-            ctx.fillRect(barX, barY, barWidth * Math.min(node.voteCount / Math.max(node.currentTerm || 1, 1), 1), 8)
-        }
-    })
-}
-
-function render() {
-    const ctx = settings.canvas.getContext("2d")
-    if (!ctx) {
-        return
-    }
-
-    settings.clock.textContent = `Time: ${controller.simulationTime}ms`
+function drawScene() {
+    const ctx = controls.canvas.getContext("2d")
+    if (!ctx) return
     drawGrid(ctx)
-    drawNodes(ctx)
-    renderStateTable()
-    renderNodeSettings()
+    controller.getActiveMessages().forEach((message) => drawMessage(ctx, message))
+    for (const node of controller.getNodesSnapshot()) {
+        const point = worldToScreen(node.x, node.y)
+        const radius = Math.max(12, Math.min(22, viewBox().scale * 0.8))
+        ctx.beginPath(); ctx.arc(point.x, point.y, radius, 0, Math.PI * 2); ctx.fillStyle = colors[node.state] ?? "#7ab8ff"; ctx.fill()
+        ctx.beginPath(); ctx.arc(point.x, point.y, radius + 6 * devicePixelRatio, 0, Math.PI * 2); ctx.lineWidth = 2 * devicePixelRatio; ctx.strokeStyle = node.isActive ? "#78e0bc" : "#ff7f66"; ctx.stroke()
+        const timerRadius = radius + 11 * devicePixelRatio
+        ctx.beginPath(); ctx.arc(point.x, point.y, timerRadius, -Math.PI / 2, Math.PI * 1.5); ctx.lineWidth = 3 * devicePixelRatio; ctx.strokeStyle = "rgba(231,241,236,.16)"; ctx.stroke()
+        ctx.beginPath(); ctx.arc(point.x, point.y, timerRadius, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * node.timerRemainingRatio); ctx.lineWidth = 3 * devicePixelRatio; ctx.strokeStyle = "#f2fff9"; ctx.stroke()
+        if (node.id === selectedNodeId) { ctx.beginPath(); ctx.arc(point.x, point.y, radius + 17 * devicePixelRatio, 0, Math.PI * 2); ctx.lineWidth = 2 * devicePixelRatio; ctx.strokeStyle = "#c6f46a"; ctx.stroke() }
+        ctx.fillStyle = "#061014"; ctx.font = `700 ${12 * devicePixelRatio}px ui-monospace`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(String(node.id), point.x, point.y)
+    }
 }
 
-settings.nodeCount.addEventListener("change", () => {
-    const value = Number(settings.nodeCount.value) || 5
-    controller.setNodeCount(value)
-    selectedNodeId = 0
-    render()
+controls.nodeCount.addEventListener("change", () => { controller.setNodeCount(Number(controls.nodeCount.value) || 5); selectNode(0) })
+controls.communicationSpeed.addEventListener("change", () => controller.setCommunicationSpeed(Number(controls.communicationSpeed.value) || 1))
+controls.timeStepMs.addEventListener("change", () => controller.setTimeStepMs(Number(controls.timeStepMs.value) || 10))
+controls.simulationSpeed.addEventListener("change", () => controller.setSimulationSpeed(Number(controls.simulationSpeed.value) || 1))
+controls.toggle.addEventListener("click", () => { controller.toggle(); updateUi() })
+controls.stateTable.addEventListener("click", (event) => { const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-node-id]"); if (button) selectNode(Number(button.dataset.nodeId)) })
+controls.toggleActive.addEventListener("click", () => { if (selectedNodeId !== null) { const node = controller.getNodeSnapshot(selectedNodeId); controller.setNodeActive(selectedNodeId, !(node?.isActive ?? true)); updateUi() } })
+controls.resetNode.addEventListener("click", () => { if (selectedNodeId !== null) { controller.resetNode(selectedNodeId); updateUi() } })
+controls.commitLog.addEventListener("click", () => {
+    if (selectedNodeId === null || !controls.logCommand.value.trim()) return
+    controller.commitLogEntry(selectedNodeId, controls.logCommand.value.trim())
+    controls.logCommand.value = ""
+    updateUi()
 })
 
-settings.communicationSpeed.addEventListener("change", () => {
-    const value = Number(settings.communicationSpeed.value) || 10
-    controller.setCommunicationSpeed(value)
-    render()
-})
-
-settings.timeStepMs.addEventListener("change", () => {
-    const value = Number(settings.timeStepMs.value) || 10
-    controller.setTimeStepMs(value)
-    render()
-})
-
-settings.toggle.addEventListener("click", () => {
-    controller.toggle()
-    settings.toggle.textContent = controller.running ? "Pause" : "Start"
-})
-
-settings.canvas.addEventListener("click", (event) => {
-    const rect = settings.canvas.getBoundingClientRect()
-    const x = (event.clientX - rect.left) / rect.width * settings.canvas.width
-    const y = (event.clientY - rect.top) / rect.height * settings.canvas.height
-
-    const hitNode = controller.getNodesSnapshot().find((node) => {
-        const p = worldToScreen(node.x, node.y)
-        return Math.hypot(p.x - x, p.y - y) <= 20
-    })
-
-    if (hitNode) {
-        selectedNodeId = hitNode.id
-        renderStateTable()
-        renderNodeSettings()
-    }
-})
-
-settings.canvas.addEventListener("mousedown", (event) => {
-    const rect = settings.canvas.getBoundingClientRect()
-    const x = (event.clientX - rect.left) / rect.width * settings.canvas.width
-    const y = (event.clientY - rect.top) / rect.height * settings.canvas.height
-
-    const hitNode = controller.getNodesSnapshot().find((node) => {
-        const p = worldToScreen(node.x, node.y)
-        return Math.hypot(p.x - x, p.y - y) <= 20
-    })
-
-    if (!hitNode) {
-        return
-    }
-
-    selectedNodeId = hitNode.id
-    const move = (moveEvent: MouseEvent) => {
-        const rect2 = settings.canvas.getBoundingClientRect()
-        const nextX = ((moveEvent.clientX - rect2.left) / rect2.width) * WORLD_SIZE
-        const nextY = ((moveEvent.clientY - rect2.top) / rect2.height) * WORLD_SIZE
-        controller.moveNode(hitNode.id, Math.max(0, Math.min(WORLD_SIZE, nextX)), Math.max(0, Math.min(WORLD_SIZE, nextY)))
-        render()
-    }
-
-    const stop = () => {
-        window.removeEventListener("mousemove", move)
-        window.removeEventListener("mouseup", stop)
-    }
-
-    window.addEventListener("mousemove", move)
-    window.addEventListener("mouseup", stop)
+controls.canvas.addEventListener("pointerdown", (event) => {
+    const point = eventToCanvasPoint(event)
+    const node = controller.getNodesSnapshot().find((item) => { const position = worldToScreen(item.x, item.y); return Math.hypot(position.x - point.x, position.y - point.y) <= 28 * devicePixelRatio })
+    if (!node) return
+    selectNode(node.id); controls.canvas.setPointerCapture(event.pointerId)
+    const move = (moveEvent: PointerEvent) => { const cursor = eventToCanvasPoint(moveEvent); const box = viewBox(); controller.moveNode(node.id, Math.max(0, Math.min(WORLD_SIZE, (cursor.x - box.marginX) / box.scale)), Math.max(0, Math.min(WORLD_SIZE, (cursor.y - box.marginY) / box.scale))) }
+    const stop = () => { controls.canvas.removeEventListener("pointermove", move); controls.canvas.removeEventListener("pointerup", stop); controls.canvas.removeEventListener("pointercancel", stop) }
+    controls.canvas.addEventListener("pointermove", move); controls.canvas.addEventListener("pointerup", stop); controls.canvas.addEventListener("pointercancel", stop)
 })
 
 window.addEventListener("resize", syncCanvasSize)
-syncCanvasSize()
-render()
-
-let lastFrameTime = 0
-function animationLoop(timestamp: number) {
-    if (!lastFrameTime) {
-        lastFrameTime = timestamp
-    }
-
-    if (timestamp - lastFrameTime >= FRAME_INTERVAL_MS) {
-        render()
-        lastFrameTime = timestamp
-    }
-
-    requestAnimationFrame(animationLoop)
-}
-
-requestAnimationFrame(animationLoop)
+syncCanvasSize(); updateUi()
+function frame() { drawScene(); updateUi(); requestAnimationFrame(frame) }
+requestAnimationFrame(frame)

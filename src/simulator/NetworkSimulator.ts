@@ -95,7 +95,7 @@ export class NetworkSimulator {
         return this.positions.get(id)
     }
 
-    getActiveMessages(): Array<{
+    getActiveMessages(atMs = this.clock.now): Array<{
         id: number
         type: string
         from: number
@@ -106,7 +106,7 @@ export class NetworkSimulator {
     }> {
         return this.activeMessages.map((message) => {
             const duration = Math.max(1, message.endedAt - message.startedAt)
-            const progress = Math.min(1, Math.max(0, (this.clock.now - message.startedAt) / duration))
+            const progress = Math.min(1, Math.max(0, (atMs - message.startedAt) / duration))
 
             return {
                 id: message.id,

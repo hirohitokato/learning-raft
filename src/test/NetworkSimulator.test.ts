@@ -30,6 +30,7 @@ describe("NetworkSimulator", () => {
 
         expect(clock.now).toBe(0)
         expect(received).toEqual([])
+        expect(network.getActiveMessages(2.5)[0]?.progress).toBe(0.5)
 
         clock.runNext()
 
