@@ -34,8 +34,11 @@ let nodeListSignature = ""
 
 function syncCanvasSize() {
     const rect = controls.canvas.getBoundingClientRect()
-    controls.canvas.width = Math.max(1, Math.floor(rect.width * devicePixelRatio))
-    controls.canvas.height = Math.max(1, Math.floor(rect.height * devicePixelRatio))
+    const width = Math.max(1, Math.floor(rect.width * devicePixelRatio))
+    const height = Math.max(1, Math.floor(rect.height * devicePixelRatio))
+    if (controls.canvas.width === width && controls.canvas.height === height) return
+    controls.canvas.width = width
+    controls.canvas.height = height
 }
 
 function viewBox() {
@@ -175,7 +178,7 @@ controls.canvas.addEventListener("pointerdown", (event) => {
     controls.canvas.addEventListener("pointermove", move); controls.canvas.addEventListener("pointerup", stop); controls.canvas.addEventListener("pointercancel", stop)
 })
 
-window.addEventListener("resize", syncCanvasSize)
+new ResizeObserver(syncCanvasSize).observe(controls.canvas)
 syncCanvasSize(); updateUi()
 function frame() { drawScene(); updateUi(); requestAnimationFrame(frame) }
 requestAnimationFrame(frame)
